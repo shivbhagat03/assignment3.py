@@ -3,7 +3,7 @@ from influxdb_client import InfluxDBClient
 from werkzeug.serving import make_server
 import threading
 
-INFLUXDB_TOKEN = "ng00FvBO_y9QMljRt8b524Kg2fAfubNaz4XM171H8qmF6o6Dr9L_4cYPuIt4NPAtRlOB0SNsr6q_93ppzo6jdQ=="
+INFLUXDB_TOKEN = "1T_6rLw7sMXiCNWK8bU6cLYNwSihdOO-dee210OYkzFD8DQaIScjUKcK0WXTrBZLNR8HkIqxZU6bzvPEwrHxPw=="
 
 token = INFLUXDB_TOKEN
 org = "test"
@@ -17,13 +17,12 @@ app = Flask(__name__)
 
 @app.route("/fetch_data", methods=["GET"])
 def fetch_data():
-    # Get start and stop times from query parameters
     start = request.args.get("start")
     stop = request.args.get("stop")
 
-    # If either start or stop is missing, return an error
+    # Validate that start and stop parameters are provided
     if not start or not stop:
-        return jsonify({"error": "Please provide both start and stop query parameters"}), 400
+        return jsonify({"error": "Please provide both 'start' and 'stop' parameters in ISO 8601 format"}), 400
 
     query = f'''
     from(bucket: "{bucket}")
@@ -34,18 +33,19 @@ def fetch_data():
     |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
     |> yield(name: "mean")
     '''
-    
     try:
         result = query_api.query(org=org, query=query)
         results = []
 
         for table in result:
             for record in table.records:
-                results.append((record.get_field(), record.get_value()))
+                results.append({
+                    "time": record.get_time(),
+                    "field": record.get_field(),
+                    "value": record.get_value()
+                })
 
-        # Print the results for debugging
         print("Fetched data:", results)
-
         return jsonify(results)
     except Exception as e:
         print("Error fetching data:", str(e))
@@ -53,7 +53,7 @@ def fetch_data():
 
 class FlaskThread(threading.Thread):
     def __init__(self, app):
-        threading.Thread.__init__(self)
+        super().__init__()
         self.srv = make_server('127.0.0.1', 5000, app)
         self.ctx = app.app_context()
         self.ctx.push()
@@ -66,5 +66,8 @@ class FlaskThread(threading.Thread):
         print("Shutting down server")
         self.srv.shutdown()
 
-#flask_thread = FlaskThread(app)
-#flask_thread.start()
+# Start the Flask server in a separate thread
+flask_thread = FlaskThread(app)
+flask_thread.start()
+
+# To stop the server, you would call `flask_thread.shutdown()`
